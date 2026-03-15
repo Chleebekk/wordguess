@@ -47,6 +47,9 @@ anim_speed = 0.08
 
 pending_res = None
 
+muffle_time = None
+muffle_delay = 1200
+
 result_time = None
 result_delay = 500
 
@@ -68,16 +71,37 @@ pop_speed = 0.06
 game_over = False
 
 game_state = "menu"
+prev_state = "menu"
 
 play_sound = None
+
+screen = pygame.display.set_mode((WIDTH,HEIGHT))
+pygame.display.set_caption("WordGuess")
+
+settings_icon_img = pygame.image.load("/Users/chleebekk/pygame/images/settings_img.png").convert_alpha()
+settings_icon_img = pygame.transform.smoothscale(settings_icon_img,(100,100))
+
+icon_color = (180,180,180)
+
+settings_icon_tinted = settings_icon_img.copy()
+settings_icon_tinted.fill(icon_color, special_flags=pygame.BLEND_RGBA_MULT)
 
 win_sound = pygame.mixer.Sound("/Users/chleebekk/pygame/sounds/win_sound.wav")
 lose_sound = pygame.mixer.Sound("/Users/chleebekk/pygame/sounds/lose_sound.wav")
 btn_click_sound = pygame.mixer.Sound("/Users/chleebekk/pygame/sounds/btn_click_sound.wav")
+bg_music = pygame.mixer.Sound("/Users/chleebekk/pygame/sounds/bg_music.wav")
 
-win_sound.set_volume(0.3)
-lose_sound.set_volume(0.3)
-btn_click_sound.set_volume(0.3)
+sfx_volume = 0.3
+
+win_sound.set_volume(sfx_volume)
+lose_sound.set_volume(sfx_volume)
+btn_click_sound.set_volume(sfx_volume)
+bg_music.set_volume(sfx_volume)
+
+slider_rect = pygame.Rect(WIDTH//2-150,350,300,10)
+slider_knob = pygame.Rect(WIDTH//2-10,340,20,30)
+
+dragging_slider = False
 
 button_font = pygame.font.SysFont("arial",35,bold=True)
 
@@ -85,21 +109,25 @@ play_button = pygame.Rect(WIDTH//2-100,400,200,70)
 
 res_btn = pygame.Rect(WIDTH//2-100,400,200,70)
 
-screen = pygame.display.set_mode((WIDTH,HEIGHT))
-pygame.display.set_caption("WordGuess")
+settings_icon = pygame.Rect(-30,-30,100,100)
+
+back_btn = pygame.Rect(WIDTH//2-100,500,200,70)
 
 clock = pygame.time.Clock()
 
 running = True
 
+bg_music.play(-1)
+
 while running:
     
     clock.tick(60)
     
-    if play_button.collidepoint(pygame.mouse.get_pos()) or res_btn.collidepoint(pygame.mouse.get_pos()):
-        color = (120,120,120)
-    else:
-        color = (80,80,80)
+    mouse = pygame.mouse.get_pos()
+    
+    play_color = (120,120,120) if play_button.collidepoint(mouse) else (80,80,80)
+    reset_color = (120,120,120) if res_btn.collidepoint(mouse) else (80,80,80)
+    back_color = (120,120,120) if back_btn.collidepoint(mouse) else (80,80,80)
     
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -107,17 +135,54 @@ while running:
             
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
+            
+            if settings_icon.collidepoint(mouse_pos):
+                
+                btn_click_sound.play()
+                if game_state!="settings":
+                    btn_anim = True
+                    prev_state = game_state
+                    next_state = "settings"
+                else:
+                    btn_anim = True
+                    next_state = prev_state
+            
+            if game_state == "settings":
+                if slider_knob.collidepoint(mouse_pos):
+                    dragging_slider = True
+                if back_btn.collidepoint(mouse_pos):
+                    btn_anim = True
+                    next_state = prev_state
+                    btn_click_sound.play()
              
             if game_state == "menu":
                 if play_button.collidepoint(mouse_pos):
                     btn_anim = True
                     next_state = "playing"
                     btn_click_sound.play()
+                    
             elif game_state == "lost":
                 if res_btn.collidepoint(mouse_pos):
                     btn_anim = True
                     next_state = "restart"
                     btn_click_sound.play()
+        if event.type == pygame.MOUSEBUTTONUP:
+            dragging_slider = False
+            
+        if dragging_slider:
+            
+            slider_knob.x = pygame.mouse.get_pos()[0] - slider_knob.width//2
+            
+            slider_knob.x = max(slider_rect.left - slider_knob.width // 2,slider_knob.x)
+            slider_knob.x = min(slider_rect.right-slider_knob.width // 2,slider_knob.x)
+            
+            sfx_volume = (slider_knob.centerx - slider_rect.left) / slider_rect.width
+            sfx_volume = max(0, min(1, sfx_volume))
+            
+            win_sound.set_volume(sfx_volume)
+            lose_sound.set_volume(sfx_volume)
+            btn_click_sound.set_volume(sfx_volume)
+            bg_music.set_volume(sfx_volume)
             
         if event.type == pygame.KEYDOWN and game_state == "playing" and not game_over:
             
@@ -161,7 +226,6 @@ while running:
                         current_col = 0
                     else:
                         pending_res = "lose"
-                        result_time = pygame.time.get_ticks()
             
             elif pygame.K_a <= event.key <= pygame.K_z:
                 if current_col < COLS:
@@ -202,11 +266,13 @@ while running:
                     game_state = "lost"
                     game_over = True
                     win_sound.play()
+                    muffle_time = pygame.time.get_ticks()
                 elif pending_res == "lose":
                             
                     game_state = "lost"
                     game_over = True
                     lose_sound.play()
+                    muffle_time = pygame.time.get_ticks()
                         
                 pending_res = None
         
@@ -285,6 +351,35 @@ while running:
             fade_aplha = 0
             fading = False
     
+    if muffle_time is not None:
+        elapsed = pygame.time.get_ticks() - muffle_time
+        if elapsed < muffle_delay:  
+            bg_music.set_volume(sfx_volume*0.3)
+        else:
+            bg_music.set_volume(sfx_volume)
+            muffle_time = None
+            
+    if game_state == "settings":
+        
+        screen.fill((20,20,20))
+        
+        title = font.render("SETTINGS",True,(255,255,255))
+        screen.blit(title,(WIDTH//2-title.get_width()//2,150))
+        
+        volume_text = button_font.render("SFX VOLUME",True,(255,255,255))
+        screen.blit(volume_text,(WIDTH//2-volume_text.get_width()//2,300))
+        
+        pygame.draw.rect(screen,(120,120,120),slider_rect)
+        pygame.draw.rect(screen,(200,200,200),slider_knob,border_radius=5)
+        
+        pygame.draw.rect(screen,back_color,back_btn,border_radius=10)
+
+        back_text = button_font.render("BACK",True,(255,255,255))
+        screen.blit(back_text,
+            (back_btn.x + back_btn.width//2 - back_text.get_width()//2,
+            back_btn.y + back_btn.height//2 - back_text.get_height()//2))
+
+    
         
     if game_state == "menu":
         screen.fill((20,20,20))
@@ -297,13 +392,13 @@ while running:
             -play_button.height*(1-btn_scale)
         )
         
-        pygame.draw.rect(screen,color,scaled_rect,border_radius=10)
+        pygame.draw.rect(screen,play_color,scaled_rect,border_radius=10)
         
         play_text = button_font.render("PLAY",True,(255,255,255))
         screen.blit(play_text,
                     (scaled_rect.x + scaled_rect.width//2 - play_text.get_width()//2,
                     scaled_rect.y + scaled_rect.height//2 - play_text.get_height()//2))
-    
+        
     if game_state == "lost":
         screen.fill((20,20,20))
         
@@ -319,12 +414,20 @@ while running:
         
         screen.blit(text,(WIDTH//2-text.get_width()//2,300))
         
-        pygame.draw.rect(screen,color,res_btn,border_radius=10)
+        pygame.draw.rect(screen,reset_color,res_btn,border_radius=10)
         
         res_text = button_font.render("RESET",True,(255,255,255))
         screen.blit(res_text,
                     (res_btn.x + res_btn.width//2 - res_text.get_width()//2,
                     res_btn.y + res_btn.height//2 - res_text.get_height()//2))
+    
+    screen.blit(
+        settings_icon_tinted,
+        (
+            settings_icon.centerx - settings_icon_tinted.get_width()//2,
+            settings_icon.centery - settings_icon_tinted.get_height()//2
+        )
+    )
     
     fade_surface = pygame.Surface((WIDTH,HEIGHT))
     fade_surface.set_alpha(fade_aplha)
